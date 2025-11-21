@@ -145,6 +145,110 @@ function Toast({ message, type = "error", onClose }) {
   );
 }
 
+function KPIItem({ label, targetText, valueText, hit, note, loading }) {
+  const dot = hit === true ? "bg-emerald-400" : hit === false ? "bg-rose-400" : "bg-slate-500";
+  const badge = hit === true ? "text-emerald-300 border-emerald-500/30" : hit === false ? "text-rose-300 border-rose-500/30" : "text-slate-300 border-slate-500/30";
+  return (
+    <div className="p-4 rounded-xl border border-slate-700/70 bg-slate-800/40">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className={clsx("inline-block h-2 w-2 rounded-full", dot)} />
+          <div className="text-slate-200 text-sm font-medium">{label}</div>
+        </div>
+        <span className={clsx("text-xs px-2 py-0.5 rounded-lg border", badge)}>
+          {hit === true ? "On track" : hit === false ? "Flagged" : "Pending"}
+        </span>
+      </div>
+      <div className="text-sm text-slate-300 flex items-center gap-3 flex-wrap">
+        <div>Target: <span className="text-slate-200 font-semibold">{targetText}</span></div>
+        <div>Current: <span className="text-white font-semibold">{loading ? "…" : valueText}</span></div>
+      </div>
+      {note && <div className="text-xs text-slate-400 mt-2">{note}</div>}
+    </div>
+  );
+}
+
+function GoldenKPIs({ totals, loading }) {
+  const revenue = Number(totals?.revenue || 0);
+  const orders = Number(totals?.orders || 0);
+  const ad = Number(totals?.ad_spend || 0);
+  const cogs = Number(totals?.cogs || 0);
+  const fees = Number(totals?.fees || 0);
+
+  const aov = orders > 0 ? revenue / orders : 0;
+  const grossMarginPct = revenue > 0 ? ((revenue - cogs) / revenue) * 100 : 0;
+  const feePct = revenue > 0 ? (fees / revenue) * 100 : 0;
+  const cpa = orders > 0 ? ad / orders : 0;
+
+  const AOV_TARGET = 70; // $
+  const GM_TARGET = 80; // %
+  const CHURN_TARGET = 70; // % per month (requires subscription data)
+  const FEES_TARGET = 5; // % per month
+  const CPA_TARGET = 50; // $
+
+  // Churn not available without subscription events; mark as pending if we can't compute
+  const churnRate = undefined; // placeholder until subscription events are present in metrics
+
+  return (
+    <div className="bg-slate-800/60 border border-slate-700/80 rounded-2xl p-5 backdrop-blur-sm shadow-[0_0_0_1px_rgba(148,163,184,0.05)]">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-slate-200 text-sm">Golden KPIs</div>
+          <div className="text-white text-xl font-semibold tracking-tight">Protect the scale rules</div>
+        </div>
+      </div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <KPIItem
+          label="AOV"
+          targetText={`$${AOV_TARGET.toFixed(0)}+`}
+          valueText={`$${aov.toFixed(2)}`}
+          hit={loading ? null : aov >= AOV_TARGET}
+          note={aov >= AOV_TARGET ? "Good: average basket size is healthy." : "Action: increase pricing, bundles, or AOV offers."}
+          loading={loading}
+        />
+        <KPIItem
+          label="Gross Margin (Supplier)"
+          targetText={`${GM_TARGET}%+`}
+          valueText={`${grossMarginPct.toFixed(1)}%`}
+          hit={loading ? null : grossMarginPct >= GM_TARGET}
+          note={grossMarginPct >= GM_TARGET ? "Good: product margin supports scale." : "Action: renegotiate COGS, adjust pricing, or reduce discounts."}
+          loading={loading}
+        />
+        <KPIItem
+          label="Churn Rate (Monthly)"
+          targetText={`${CHURN_TARGET}% or less`}
+          valueText={churnRate === undefined ? "Not available" : `${churnRate.toFixed(1)}%`}
+          hit={churnRate === undefined ? null : churnRate <= CHURN_TARGET}
+          note={
+            churnRate === undefined
+              ? "Connect subscription events to compute churn."
+              : churnRate <= CHURN_TARGET
+              ? "Good: retention within guardrails."
+              : "Action: improve onboarding, activation, and win-back."
+          }
+          loading={loading}
+        />
+        <KPIItem
+          label="Processing Fees"
+          targetText={`≤ ${FEES_TARGET}%`}
+          valueText={`${feePct.toFixed(2)}%`}
+          hit={loading ? null : feePct <= FEES_TARGET}
+          note={feePct <= FEES_TARGET ? "Good: fees in control." : "Action: optimize gateway rates or payment mix."}
+          loading={loading}
+        />
+        <KPIItem
+          label="CPA (Facebook)"
+          targetText={`≤ $${CPA_TARGET}`}
+          valueText={`$${cpa.toFixed(2)}`}
+          hit={loading ? null : cpa <= CPA_TARGET}
+          note={cpa <= CPA_TARGET ? "Good: acquisition cost efficient." : "Action: improve creatives, audiences, or funnel CVR."}
+          loading={loading}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [range, setRange] = useState({ start: "", end: "" });
   const [loading, setLoading] = useState(false);
@@ -238,6 +342,11 @@ export default function Dashboard() {
             <Stat label="Profit (range)" value={`$${(totals.profit || 0).toFixed(2)}`} trend={totals.revenue ? `${Math.round(((totals.profit || 0) / (totals.revenue || 1)) * 100)}% margin` : undefined} trendDir={(totals.profit || 0) >= 0 ? "up" : "down"} />
           </>
         )}
+      </div>
+
+      {/* Golden KPIs */}
+      <div className="mb-6">
+        <GoldenKPIs totals={totals} loading={loading} />
       </div>
 
       {/* Charts */}
