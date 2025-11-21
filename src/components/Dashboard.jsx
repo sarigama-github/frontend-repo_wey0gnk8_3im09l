@@ -137,7 +137,7 @@ function SkeletonCard() {
 }
 
 function Toast({ message, type = "error", onClose }) {
-  const color = type === "success" ? "bg-emerald-500" : type === "info" ? "bg-blue-500" : "bg-rose-500";
+  const color = type === "success" ? "bg-emerald-500" : type === "info" ? "bg-blue-500" : type === "warning" ? "bg-amber-500" : "bg-rose-500";
   return (
     <div className="fixed bottom-6 right-6 z-50">
       <div className={clsx("text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3", color)}>
@@ -251,6 +251,69 @@ function GoldenKPIs({ totals, loading }) {
   );
 }
 
+function Pill({ children, tone = "info" }) {
+  const colors = {
+    success: "bg-emerald-500/20 text-emerald-200 border-emerald-500/30",
+    warning: "bg-amber-500/20 text-amber-200 border-amber-500/30",
+    info: "bg-blue-500/20 text-blue-200 border-blue-500/30",
+    danger: "bg-rose-500/20 text-rose-200 border-rose-500/30",
+  };
+  return <span className={clsx("text-xs px-2 py-0.5 rounded-lg border", colors[tone] || colors.info)}>{children}</span>;
+}
+
+function ObservationItem({ item }) {
+  const toneMap = { success: "success", warning: "warning", info: "info", error: "danger" };
+  const tone = toneMap[item.severity] || "info";
+  return (
+    <div className="p-3 rounded-xl border border-slate-700/70 bg-slate-800/40">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <div className="text-slate-200 text-sm font-medium">{item.market ? `${item.market}` : "All markets"}</div>
+        <Pill tone={tone}>{item.severity}</Pill>
+      </div>
+      <div className="text-sm text-slate-300">{item.message}</div>
+    </div>
+  );
+}
+
+function ObservationsPanel({ data, loading, onCopy }) {
+  const consolidated = data?.observations || [];
+  const facebook = data?.facebook || [];
+  const shopify = data?.shopify || [];
+
+  return (
+    <div className="bg-slate-800/60 border border-slate-700/80 rounded-2xl p-5 backdrop-blur-sm shadow-[0_0_0_1px_rgba(148,163,184,0.05)]">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <div className="text-slate-200 text-sm">Observations</div>
+          <div className="text-white text-xl font-semibold tracking-tight">AI CFO insights</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={onCopy} className="px-3 py-1.5 rounded-lg text-xs bg-slate-700/60 hover:bg-slate-600 text-slate-200">Copy JSON</button>
+        </div>
+      </div>
+
+      {loading ? (
+        <SkeletonCard />
+      ) : (
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="space-y-3">
+            <div className="text-slate-300 text-sm">Overall</div>
+            {consolidated.length === 0 ? <div className="text-slate-500 text-sm">No observations.</div> : consolidated.map((o, i) => <ObservationItem key={i} item={o} />)}
+          </div>
+          <div className="space-y-3">
+            <div className="text-slate-300 text-sm">Facebook</div>
+            {facebook.length === 0 ? <div className="text-slate-500 text-sm">No observations.</div> : facebook.map((o, i) => <ObservationItem key={i} item={o} />)}
+          </div>
+          <div className="space-y-3">
+            <div className="text-slate-300 text-sm">Shopify</div>
+            {shopify.length === 0 ? <div className="text-slate-500 text-sm">No observations.</div> : shopify.map((o, i) => <ObservationItem key={i} item={o} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [range, setRange] = useState({ start: "", end: "" });
   const [market, setMarket] = useState("");
@@ -258,6 +321,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [forecast, setForecast] = useState(null);
+  const [observations, setObservations] = useState(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -292,6 +356,24 @@ export default function Dashboard() {
       const f = await fetch(`${API_BASE}/api/mrr-forecast?${fq.toString()}`);
       if (!f.ok) throw new Error("Failed to load forecast");
       setForecast(await f.json());
+
+      // Observations for AI CFO + n8n
+      const oq = new URLSearchParams();
+      if (range.start) oq.set("start", range.start);
+      if (range.end) oq.set("end", range.end);
+      if (market) oq.set("market", market);
+      const o = await fetch(`${API_BASE}/api/observations?${oq.toString()}`);
+      if (!o.ok) throw new Error("Failed to load observations");
+      const obs = await o.json();
+      setObservations(obs);
+
+      // Real-time toast notifications when any KPI is flagged or warning in observations
+      const warning = (obs?.observations || []).find((x) => x.severity === "warning") || (obs?.facebook || []).find((x) => x.severity === "warning") || (obs?.shopify || []).find((x) => x.severity === "warning");
+      if (warning) {
+        setToast({ type: "warning", message: warning.message });
+        setTimeout(() => setToast(null), 5000);
+      }
+
       setLastUpdated(new Date());
     } catch (e) {
       console.error(e);
@@ -316,6 +398,17 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
       setTimeout(() => setToast(null), 4000);
+    }
+  };
+
+  const handleCopyJSON = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(observations || {}, null, 2));
+      setToast({ type: "success", message: "Observations JSON copied for n8n." });
+      setTimeout(() => setToast(null), 3000);
+    } catch (e) {
+      setToast({ type: "error", message: "Failed to copy." });
+      setTimeout(() => setToast(null), 3000);
     }
   };
 
@@ -397,6 +490,10 @@ export default function Dashboard() {
             <LineCard title={`Daily Profit (${market || 'All'})`} data={dayToPoint(summary?.days, "profit")} color="#4ade80" />
           </>
         )}
+      </div>
+
+      <div className="mb-6">
+        <ObservationsPanel data={observations} loading={loading} onCopy={handleCopyJSON} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-4">
